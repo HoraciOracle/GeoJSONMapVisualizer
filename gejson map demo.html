@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GeoJSON Map Visualizer</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+        }
+        
+        .controls {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .file-input {
+            margin-bottom: 15px;
+        }
+        
+        .file-input input[type="file"] {
+            padding: 10px;
+            border: 2px dashed #ddd;
+            border-radius: 4px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        
+        .map-container {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        #map {
+            height: 600px;
+            width: 100%;
+        }
+        
+        .info {
+            background: #e8f4f8;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            border-left: 4px solid #2196F3;
+        }
+        
+        .layer-controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .layer-controls select, .layer-controls button {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: white;
+            cursor: pointer;
+        }
+        
+        .layer-controls button {
+            background: #2196F3;
+            color: white;
+            border: none;
+        }
+        
+        .layer-controls button:hover {
+            background: #1976D2;
+        }
+        
+        .stats {
+            background: #fff3cd;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 15px;
+            border-left: 4px solid #ffc107;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🗺️ GeoJSON Map Visualizer</h1>
+        
+        <div class="controls">
+            <div class="info">
+                <strong>How to use:</strong> Upload your GeoJSON file below, or paste your GeoJSON data directly into the code where indicated.
+            </div>
+            
+            <div class="file-input">
+                <label for="geojsonFile"><strong>Upload GeoJSON File:</strong></label>
+                <input type="file" id="geojsonFile" accept=".json,.geojson" />
+            </div>
+            
+            <div class="layer-controls">
+                <label for="baseLayer"><strong>Map Style:</strong></label>
+                <select id="baseLayer">
+                    <option value="osm">OpenStreetMap</option>
+                    <option value="satellite">Satellite</option>
+                    <option value="topo">Topographic</option>
+                    <option value="dark">Dark Theme</option>
+                </select>
+                
+                <button id="fitBounds">Fit to Data</button>
+                <button id="clearData">Clear Data</button>
+            </div>
+            
+            <div id="stats" class="stats" style="display: none;"></div>
+        </div>
+        
+        <div class="map-container">
+            <div id="map"></div>
+        </div>
+    </div>
+
+    <!-- Leaflet JavaScript -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    
+    <script>
+        // Initialize the map
+        const map = L.map('map').setView([40.0, 0.0], 2);
+        
+        // Base layer options
+        const baseLayers = {
+            osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }),
+            satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                attribution: '© Esri'
+            }),
+            topo: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenTopoMap contributors'
+            }),
+            dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '© CartoDB'
+            })
+        };
+        
+        // Add default layer
+        baseLayers.osm.addTo(map);
+        
+        // Variable to store current GeoJSON layer
+        let currentGeoJSONLayer = null;
+        
+        // =================================================================
+        // 🎯 PUT YOUR GEOJSON DATA HERE:
+        // Replace 'null' with your GeoJSON object or keep it null to use file upload
+        // =================================================================
+        const YOUR_GEOJSON_DATA = null;
+        
+        // Example of how your data should look:
+        /*
+        const YOUR_GEOJSON_DATA = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "name": "Sample Point"
+                    },
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [-74.006, 40.7128]
+                    }
+                }
+            ]
+        };
+        */
+        
+        // Style function for GeoJSON features
+        function getFeatureStyle(feature) {
+            const geometryType = feature.geometry.type;
+            
+            switch(geometryType) {
+                case 'Point':
+                    return {
+                        radius: 6,
+                        fillColor: '#ff7800',
+                        color: '#000',
+                        weight: 1,
+                        opacity: 1,
+                        fillOpacity: 0.8
+                    };
+                case 'LineString':
+                case 'MultiLineString':
+                    return {
+                        color: '#3388ff',
+                        weight: 3,
+                        opacity: 0.8
+                    };
+                case 'Polygon':
+                case 'MultiPolygon':
+                    return {
+                        fillColor: '#ff7800',
+                        weight: 2,
+                        opacity: 1,
+                        color: 'white',
+                        dashArray: '3',
+                        fillOpacity: 0.7
+                    };
+                default:
+                    return {
+                        color: '#3388ff',
+                        weight: 2,
+                        opacity: 0.8
+                    };
+            }
+        }
+        
+        // Function to create popup content
+        function createPopupContent(feature) {
+            if (feature.properties) {
+                let content = '<div style="max-width: 300px;">';
+                content += '<h4 style="margin: 0 0 10px 0; color: #333;">Feature Properties</h4>';
+                
+                for (const [key, value] of Object.entries(feature.properties)) {
+                    if (value !== null && value !== undefined) {
+                        content += `<strong>${key}:</strong> ${value}<br>`;
+                    }
+                }
+                
+                content += `<hr style="margin: 10px 0;"><small><strong>Type:</strong> ${feature.geometry.type}</small>`;
+                content += '</div>';
+                return content;
+            }
+            return `<strong>Type:</strong> ${feature.geometry.type}`;
+        }
+        
+        // Function to add GeoJSON to map
+        function addGeoJSONToMap(geojsonData) {
+            try {
+                // Remove existing layer if present
+                if (currentGeoJSONLayer) {
+                    map.removeLayer(currentGeoJSONLayer);
+                }
+                
+                // Add new GeoJSON layer
+                currentGeoJSONLayer = L.geoJSON(geojsonData, {
+                    style: getFeatureStyle,
+                    pointToLayer: function (feature, latlng) {
+                        return L.circleMarker(latlng, getFeatureStyle(feature));
+                    },
+                    onEachFeature: function (feature, layer) {
+                        // Add popup
+                        const popupContent = createPopupContent(feature);
+                        layer.bindPopup(popupContent);
+                        
+                        // Add hover effects
+                        layer.on({
+                            mouseover: function(e) {
+                                const layer = e.target;
+                                if (layer.setStyle) {
+                                    layer.setStyle({
+                                        weight: 5,
+                                        color: '#666',
+                                        dashArray: '',
+                                        fillOpacity: 0.9
+                                    });
+                                }
+                                layer.bringToFront();
+                            },
+                            mouseout: function(e) {
+                                currentGeoJSONLayer.resetStyle(e.target);
+                            }
+                        });
+                    }
+                }).addTo(map);
+                
+                // Fit map to data bounds
+                if (currentGeoJSONLayer.getBounds().isValid()) {
+                    map.fitBounds(currentGeoJSONLayer.getBounds(), { padding: [20, 20] });
+                }
+                
+                // Update statistics
+                updateStats(geojsonData);
+                
+                console.log('GeoJSON data loaded successfully!');
+                
+            } catch (error) {
+                alert('Error loading GeoJSON data: ' + error.message);
+                console.error('GeoJSON Error:', error);
+            }
+        }
+        
+        // Function to update statistics
+        function updateStats(geojsonData) {
+            const statsDiv = document.getElementById('stats');
+            
+            if (geojsonData && geojsonData.features) {
+                const totalFeatures = geojsonData.features.length;
+                const geometryTypes = {};
+                
+                geojsonData.features.forEach(feature => {
+                    const type = feature.geometry.type;
+                    geometryTypes[type] = (geometryTypes[type] || 0) + 1;
+                });
+                
+                let statsHTML = `<strong>Dataset Statistics:</strong> ${totalFeatures} features loaded<br>`;
+                statsHTML += '<strong>Geometry Types:</strong> ';
+                statsHTML += Object.entries(geometryTypes)
+                    .map(([type, count]) => `${type} (${count})`)
+                    .join(', ');
+                
+                statsDiv.innerHTML = statsHTML;
+                statsDiv.style.display = 'block';
+            } else {
+                statsDiv.style.display = 'none';
+            }
+        }
+        
+        // File upload handler
+        document.getElementById('geojsonFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const geojsonData = JSON.parse(e.target.result);
+                        addGeoJSONToMap(geojsonData);
+                    } catch (error) {
+                        alert('Error parsing JSON file: ' + error.message);
+                    }
+                };
+                reader.readAsText(file);
+            }
+        });
+        
+        // Base layer switcher
+        document.getElementById('baseLayer').addEventListener('change', function(e) {
+            // Remove current base layer
+            map.eachLayer(function(layer) {
+                if (layer._url) { // This identifies tile layers
+                    map.removeLayer(layer);
+                }
+            });
+            
+            // Add selected base layer
+            baseLayers[e.target.value].addTo(map);
+        });
+        
+        // Fit bounds button
+        document.getElementById('fitBounds').addEventListener('click', function() {
+            if (currentGeoJSONLayer && currentGeoJSONLayer.getBounds().isValid()) {
+                map.fitBounds(currentGeoJSONLayer.getBounds(), { padding: [20, 20] });
+            } else {
+                alert('No data loaded to fit bounds to.');
+            }
+        });
+        
+        // Clear data button
+        document.getElementById('clearData').addEventListener('click', function() {
+            if (currentGeoJSONLayer) {
+                map.removeLayer(currentGeoJSONLayer);
+                currentGeoJSONLayer = null;
+                document.getElementById('stats').style.display = 'none';
+                document.getElementById('geojsonFile').value = '';
+            }
+        });
+        
+        // Load data if provided directly in code
+        if (YOUR_GEOJSON_DATA) {
+            addGeoJSONToMap(YOUR_GEOJSON_DATA);
+        }
+    </script>
+</body>
+</html>
